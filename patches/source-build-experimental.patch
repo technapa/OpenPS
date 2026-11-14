@@ -1,0 +1,481 @@
+diff --git a/build_win.bat b/build_win.bat
+index 038bc8d..8b8f83b 100644
+--- a/build_win.bat
++++ b/build_win.bat
+@@ -75,7 +75,7 @@ REM The officially supported toolchain versions are:
+ REM   Minimum: 16 (Visual Studio 2019)
+ REM   Maximum: 17 (Visual Studio 2022)
+ SET PS_VERSION_SUPPORTED=16
+-SET PS_VERSION_EXCEEDED=18
++SET PS_VERSION_EXCEEDED=19
+ SET VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe
+ IF NOT EXIST "%VSWHERE%" SET VSWHERE=%ProgramFiles%\Microsoft Visual Studio\Installer\vswhere.exe
+ FOR /F "tokens=4 USEBACKQ delims=." %%I IN (`"%VSWHERE%" -nologo -property productId`) DO SET PS_PRODUCT_DEFAULT=%%I
+diff --git a/src/platform/msw/PrusaSlicer.rc.in b/src/platform/msw/PrusaSlicer.rc.in
+index 7c34d5a..9b5a937 100644
+--- a/src/platform/msw/PrusaSlicer.rc.in
++++ b/src/platform/msw/PrusaSlicer.rc.in
+@@ -6,14 +6,14 @@ PRODUCTVERSION @SLIC3R_RC_VERSION@
+  {
+   BLOCK "040904E4"
+   {
+-   VALUE "CompanyName", "Prusa Research"
++   VALUE "CompanyName", "TechNapa / OpenPS"
+    VALUE "FileDescription", "@SLIC3R_APP_NAME@"
+    VALUE "FileVersion", "@SLIC3R_BUILD_ID@"
+    VALUE "ProductName", "@SLIC3R_APP_NAME@"
+    VALUE "ProductVersion", "@SLIC3R_BUILD_ID@"
+    VALUE "InternalName", "@SLIC3R_APP_NAME@"
+-   VALUE "LegalCopyright", "Copyright \251 2016-2026 Prusa Research, \251 2011-2018 Alessandro Ranellucci"
+-   VALUE "OriginalFilename", "prusa-slicer.exe"
++   VALUE "LegalCopyright", "Copyright \251 2026 TechNapa / OpenPS, \251 2016-2026 Prusa Research"
++   VALUE "OriginalFilename", "OpenPS.exe"
+   }
+  }
+  BLOCK "VarFileInfo"
+@@ -21,5 +21,5 @@ PRODUCTVERSION @SLIC3R_RC_VERSION@
+    VALUE "Translation", 0x409, 1252
+  }
+ }
+-2 ICON "@SLIC3R_RESOURCES_DIR@/icons/PrusaSlicer.ico"
++2 ICON "@SLIC3R_RESOURCES_DIR@/icons/OpenPS.ico"
+ 1 24 "PrusaSlicer.manifest" 
+diff --git a/src/slic3r/GUI/CameraUtils.cpp b/src/slic3r/GUI/CameraUtils.cpp
+index 7bf8e16..f4ea664 100644
+--- a/src/slic3r/GUI/CameraUtils.cpp
++++ b/src/slic3r/GUI/CameraUtils.cpp
+@@ -17,6 +17,7 @@
+ #include "admesh/stl.h"
+ #include "libslic3r/Exception.hpp"
+ #include "libslic3r/TriangleMesh.hpp"
++#include "libslic3r/Model.hpp"
+ #include "slic3r/GUI/Camera.hpp"
+ #include "slic3r/GUI/GLModel.hpp"
+ 
+@@ -144,3 +145,57 @@ Vec2d CameraUtils::get_z0_position(const Camera &camera, const Vec2d & coor)
+     Vec3d p = p0 - t * dir;
+     return Vec2d(p.x(), p.y());
+ }
++
++Vec3d CameraUtils::calculate_object_cog(const ModelObject &object, int instance_idx)
++{
++    if (instance_idx < 0 || instance_idx >= int(object.instances.size()))
++        instance_idx = 0;
++
++    const Transform3d inst_mat = (instance_idx < int(object.instances.size())) ? 
++        object.instances[instance_idx]->get_matrix() : Transform3d::Identity();
++
++    double total_volume = 0.0;
++    Vec3d cog_accum = Vec3d::Zero();
++    double total_area = 0.0;
++    Vec3d surface_centroid_accum = Vec3d::Zero();
++
++    for (const ModelVolume *volume : object.volumes) {
++        if (!volume || volume->type() != ModelVolumeType::MODEL_PART)
++            continue;
++
++        const indexed_triangle_set &its = volume->mesh().its;
++        if (its.empty())
++            continue;
++
++        const Transform3d total_trafo = inst_mat * volume->get_matrix();
++
++        for (const Vec3i &face : its.indices) {
++            const Vec3d p1 = total_trafo * its.vertices[face[0]].cast<double>();
++            const Vec3d p2 = total_trafo * its.vertices[face[1]].cast<double>();
++            const Vec3d p3 = total_trafo * its.vertices[face[2]].cast<double>();
++
++            // Signed volume of tetrahedron formed with origin (0,0,0)
++            const double v_tet = (p1.cross(p2)).dot(p3) / 6.0;
++            const Vec3d c_tet = 0.25 * (p1 + p2 + p3);
++
++            total_volume += v_tet;
++            cog_accum += v_tet * c_tet;
++
++            // Surface centroid fallback
++            const double area = 0.5 * ((p2 - p1).cross(p3 - p1)).norm();
++            total_area += area;
++            surface_centroid_accum += area * ((p1 + p2 + p3) / 3.0);
++        }
++    }
++
++    if (std::abs(total_volume) > 1e-4)
++        return cog_accum / total_volume;
++
++    if (total_area > 1e-4)
++        return surface_centroid_accum / total_area;
++
++    if (instance_idx < int(object.instances.size()))
++        return object.instances[instance_idx]->get_matrix() * object.raw_bounding_box().center();
++
++    return Vec3d::Zero();
++}
+diff --git a/src/slic3r/GUI/CameraUtils.hpp b/src/slic3r/GUI/CameraUtils.hpp
+index 3d1f7ee..0818340 100644
+--- a/src/slic3r/GUI/CameraUtils.hpp
++++ b/src/slic3r/GUI/CameraUtils.hpp
+@@ -13,6 +13,7 @@
+ 
+ namespace Slic3r {
+ class GLVolume;
++class ModelObject;
+ 
+ namespace GUI {
+ struct Camera;
+@@ -29,6 +30,8 @@ class CameraUtils
+ public:
+     CameraUtils() = delete; // only static functions
+ 
++    static Vec3d calculate_object_cog(const ModelObject &object, int instance_idx);
++
+ 	/// <summary>
+ 	/// Project point throw camera to 2d coordinate into imgui window
+ 	/// </summary>
+diff --git a/src/slic3r/GUI/GLCanvas3D.cpp b/src/slic3r/GUI/GLCanvas3D.cpp
+index ae19510..b32e584 100644
+--- a/src/slic3r/GUI/GLCanvas3D.cpp
++++ b/src/slic3r/GUI/GLCanvas3D.cpp
+@@ -2197,6 +2197,7 @@ void GLCanvas3D::render()
+     _render_camera_target();
+     _render_camera_target_validation_box();
+ #endif // ENABLE_SHOW_CAMERA_TARGET
++    _render_center_of_gravity_marker();
+ 
+         if (m_picking_enabled && m_rectangle_selection.is_dragging())
+             m_rectangle_selection.render(*this);
+@@ -6982,6 +6983,88 @@ void GLCanvas3D::_render_camera_target_validation_box()
+ }
+ #endif // ENABLE_SHOW_CAMERA_TARGET
+ 
++void GLCanvas3D::set_center_of_gravity_marker(const Vec3d& pos, int obj_idx, int inst_idx)
++{
++    m_cog_marker.position = pos;
++    m_cog_marker.object_idx = obj_idx;
++    m_cog_marker.instance_idx = inst_idx;
++    m_cog_marker.visible = true;
++    m_dirty = true;
++}
++
++void GLCanvas3D::clear_center_of_gravity_marker()
++{
++    m_cog_marker.visible = false;
++    m_cog_marker.object_idx = -1;
++    m_cog_marker.instance_idx = -1;
++    m_dirty = true;
++}
++
++void GLCanvas3D::_render_center_of_gravity_marker()
++{
++    if (!m_cog_marker.visible)
++        return;
++
++    const Camera& camera = wxGetApp().plater()->get_camera();
++    const Vec3d& center = m_cog_marker.position;
++
++    if (!m_cog_marker.sphere.is_initialized()) {
++        m_cog_marker.sphere.reset();
++        indexed_triangle_set sphere_mesh = its_make_sphere(2.5, PI / 12.0);
++        m_cog_marker.sphere.init_from(std::move(sphere_mesh));
++    }
++
++    const float axis_len = 15.0f;
++    for (int i = 0; i < 3; ++i) {
++        if (!m_cog_marker.axes[i].is_initialized()) {
++            m_cog_marker.axes[i].reset();
++            GLModel::Geometry init_data;
++            init_data.format = { GLModel::Geometry::EPrimitiveType::Lines, GLModel::Geometry::EVertexLayout::P3 };
++            init_data.color = (i == X) ? ColorRGBA::X() : (i == Y) ? ColorRGBA::Y() : ColorRGBA::Z();
++            init_data.reserve_vertices(2);
++            init_data.reserve_indices(2);
++            if (i == X) {
++                init_data.add_vertex(Vec3f(-axis_len, 0.0f, 0.0f));
++                init_data.add_vertex(Vec3f(+axis_len, 0.0f, 0.0f));
++            } else if (i == Y) {
++                init_data.add_vertex(Vec3f(0.0f, -axis_len, 0.0f));
++                init_data.add_vertex(Vec3f(0.0f, +axis_len, 0.0f));
++            } else {
++                init_data.add_vertex(Vec3f(0.0f, 0.0f, -axis_len));
++                init_data.add_vertex(Vec3f(0.0f, 0.0f, +axis_len));
++            }
++            init_data.add_line(0, 1);
++            m_cog_marker.axes[i].init_from(std::move(init_data));
++        }
++    }
++
++    glsafe(::glDisable(GL_DEPTH_TEST));
++
++    GLShaderProgram* line_shader = wxGetApp().get_shader("flat");
++    if (line_shader != nullptr) {
++        line_shader->start_using();
++        line_shader->set_uniform("view_model_matrix", camera.get_view_matrix() * Geometry::translation_transform(center));
++        line_shader->set_uniform("projection_matrix", camera.get_projection_matrix());
++        for (int i = 0; i < 3; ++i) {
++            m_cog_marker.axes[i].render();
++        }
++        line_shader->stop_using();
++    }
++
++    GLShaderProgram* flat_shader = wxGetApp().get_shader("flat");
++    if (flat_shader != nullptr) {
++        flat_shader->start_using();
++        Transform3d view_model = camera.get_view_matrix() * Geometry::translation_transform(center);
++        flat_shader->set_uniform("view_model_matrix", view_model);
++        flat_shader->set_uniform("projection_matrix", camera.get_projection_matrix());
++        m_cog_marker.sphere.set_color(ColorRGBA(0.918f, 0.404f, 0.047f, 1.0f));
++        m_cog_marker.sphere.render();
++        flat_shader->stop_using();
++    }
++
++    glsafe(::glEnable(GL_DEPTH_TEST));
++}
++
+ static void render_sla_layer_legend(const SLAPrint& print, int layer_idx, int cnv_width, float bed_sel_height)
+ {
+     const std::vector<double>& areas = print.print_statistics().layers_areas;
+diff --git a/src/slic3r/GUI/GLCanvas3D.hpp b/src/slic3r/GUI/GLCanvas3D.hpp
+index dbaacc3..08d14ff 100644
+--- a/src/slic3r/GUI/GLCanvas3D.hpp
++++ b/src/slic3r/GUI/GLCanvas3D.hpp
+@@ -667,6 +667,18 @@ private:
+     CameraTarget m_camera_target;
+     GLModel m_target_validation_box;
+ #endif // ENABLE_SHOW_CAMERA_TARGET
++
++    struct CenterOfGravityMarker
++    {
++        bool visible{ false };
++        Vec3d position{ Vec3d::Zero() };
++        int object_idx{ -1 };
++        int instance_idx{ -1 };
++        GLModel sphere;
++        std::array<GLModel, 3> axes;
++    };
++    CenterOfGravityMarker m_cog_marker;
++
+     GLModel m_background;
+ 
+ public:
+@@ -819,6 +831,13 @@ public:
+     void delete_selected() { m_selection.erase(); }
+     void ensure_on_bed(unsigned int object_idx, bool allow_negative_z);
+ 
++    void set_center_of_gravity_marker(const Vec3d& pos, int obj_idx = -1, int inst_idx = -1);
++    void clear_center_of_gravity_marker();
++    bool is_center_of_gravity_marker_visible() const { return m_cog_marker.visible; }
++    const Vec3d& get_center_of_gravity_marker_position() const { return m_cog_marker.position; }
++    int get_center_of_gravity_marker_object_idx() const { return m_cog_marker.object_idx; }
++    int get_center_of_gravity_marker_instance_idx() const { return m_cog_marker.instance_idx; }
++
+     std::vector<double> get_gcode_layers_zs() const { return m_gcode_viewer.get_layers_zs(); }
+     std::vector<float> get_gcode_layers_times() const { return m_gcode_viewer.get_layers_times(); }
+     const std::vector<float>& get_gcode_layers_times_cache() const { return m_gcode_layers_times_cache; }
+@@ -1027,6 +1046,7 @@ private:
+     void _render_camera_target();
+     void _render_camera_target_validation_box();
+ #endif // ENABLE_SHOW_CAMERA_TARGET
++    void _render_center_of_gravity_marker();
+     void _render_sla_slices();
+     void _render_selection_sidebar_hints() { m_selection.render_sidebar_hints(m_sidebar_field); }
+     bool _render_undo_redo_stack(const bool is_undo, float pos_x);
+diff --git a/src/slic3r/GUI/GUI_Factories.cpp b/src/slic3r/GUI/GUI_Factories.cpp
+index 3f30b17..c623eb5 100644
+--- a/src/slic3r/GUI/GUI_Factories.cpp
++++ b/src/slic3r/GUI/GUI_Factories.cpp
+@@ -1176,6 +1176,19 @@ void MenuFactory::create_default_menu()
+     wxMenu* sub_menu = append_submenu_add_generic(&m_default_menu, ModelVolumeType::INVALID);
+     append_submenu(&m_default_menu, sub_menu, wxID_ANY, _L("Add Shape"), "", "add_part",
+         []() {return true; }, m_parent);
++
++    m_default_menu.AppendSeparator();
++    wxMenu* origin_menu = new wxMenu();
++    if (origin_menu) {
++        append_menu_item(origin_menu, wxID_ANY, _L("Center of active object"), _L("Center of active object"),
++            [](wxCommandEvent&) { plater()->set_camera_target_to_object_cog(); }, "", &m_default_menu,
++            []() { return plater()->get_selected_object_idx() >= 0; }, m_parent);
++        append_menu_item(origin_menu, wxID_ANY, _L("Center of build plate"), _L("Center of build plate"),
++            [](wxCommandEvent&) { plater()->set_camera_target_to_bed_center(); }, "", &m_default_menu,
++            []() { return true; }, m_parent);
++        append_submenu(&m_default_menu, origin_menu, wxID_ANY, _L("Set origin"), _L("Set origin"), "",
++            []() { return true; }, m_parent);
++    }
+ }
+ 
+ void MenuFactory::create_common_object_menu(wxMenu* menu)
+@@ -1204,6 +1217,18 @@ void MenuFactory::create_common_object_menu(wxMenu* menu)
+ 
+     append_menu_items_split(menu);
+     menu->AppendSeparator();
++
++    if (wxMenu* origin_menu = new wxMenu()) {
++        append_menu_item(origin_menu, wxID_ANY, _L("Center of active object"), _L("Center of active object"),
++            [](wxCommandEvent&) { plater()->set_camera_target_to_object_cog(); }, "", menu,
++            []() { return plater()->get_selected_object_idx() >= 0; }, m_parent);
++        append_menu_item(origin_menu, wxID_ANY, _L("Center of build plate"), _L("Center of build plate"),
++            [](wxCommandEvent&) { plater()->set_camera_target_to_bed_center(); }, "", menu,
++            []() { return true; }, m_parent);
++        append_submenu(menu, origin_menu, wxID_ANY, _L("Set origin"), _L("Set origin"), "",
++            []() { return true; }, m_parent);
++    }
++    menu->AppendSeparator();
+ }
+ 
+ void MenuFactory::append_menu_items_split(wxMenu *menu)
+@@ -1287,6 +1312,17 @@ void MenuFactory::create_instance_menu()
+     // create "Instance to Object" menu item
+     append_menu_item_instance_to_object(menu);
+     append_menu_item_printable(menu);
++
++    if (wxMenu* origin_menu = new wxMenu()) {
++        append_menu_item(origin_menu, wxID_ANY, _L("Center of active object"), _L("Center of active object"),
++            [](wxCommandEvent&) { plater()->set_camera_target_to_object_cog(); }, "", menu,
++            []() { return plater()->get_selected_object_idx() >= 0; }, m_parent);
++        append_menu_item(origin_menu, wxID_ANY, _L("Center of build plate"), _L("Center of build plate"),
++            [](wxCommandEvent&) { plater()->set_camera_target_to_bed_center(); }, "", menu,
++            []() { return true; }, m_parent);
++        append_submenu(menu, origin_menu, wxID_ANY, _L("Set origin"), _L("Set origin"), "",
++            []() { return true; }, m_parent);
++    }
+ }
+ 
+ void MenuFactory::init(wxWindow* parent)
+diff --git a/src/slic3r/GUI/Plater.cpp b/src/slic3r/GUI/Plater.cpp
+index a116252..f3161d2 100644
+--- a/src/slic3r/GUI/Plater.cpp
++++ b/src/slic3r/GUI/Plater.cpp
+@@ -103,6 +103,7 @@
+ #include "GUI_Preview.hpp"
+ #include "3DBed.hpp"
+ #include "Camera.hpp"
++#include "CameraUtils.hpp"
+ #include "Mouse3DController.hpp"
+ #include "Tab.hpp"
+ #include "Jobs/ArrangeJob2.hpp"
+@@ -510,6 +511,8 @@ struct Plater::priv
+     void mirror(Axis axis);
+     void split_object();
+     void split_volume();
++    void set_camera_target_to_object_cog();
++    void set_camera_target_to_bed_center();
+     void scale_selection_to_fit_print_volume();
+ 
+     // Return the active Undo/Redo stack. It may be either the main stack or the Gimzo stack.
+@@ -1225,6 +1228,15 @@ void Plater::priv::update(unsigned int flags)
+         // pulls the correct data.
+         update_status = this->update_background_process(false, flags & (unsigned int)UpdateParams::POSTPONE_VALIDATION_ERROR_MESSAGE);
+     s_multiple_beds.update_shown_beds(model, q->build_volume(), true);
++    if (this->view3D && this->view3D->get_canvas3d() && this->view3D->get_canvas3d()->is_center_of_gravity_marker_visible()) {
++        const int obj_idx = this->view3D->get_canvas3d()->get_center_of_gravity_marker_object_idx();
++        const int inst_idx = this->view3D->get_canvas3d()->get_center_of_gravity_marker_instance_idx();
++        if (obj_idx >= 0 && obj_idx < int(model.objects.size()) && inst_idx >= 0 && inst_idx < int(model.objects[obj_idx]->instances.size())) {
++            const Vec3d new_cog = CameraUtils::calculate_object_cog(*model.objects[obj_idx], inst_idx);
++            this->view3D->get_canvas3d()->set_center_of_gravity_marker(new_cog, obj_idx, inst_idx);
++            this->get_camera().set_target(new_cog);
++        }
++    }
+     this->view3D->reload_scene(false, flags & (unsigned int)UpdateParams::FORCE_FULL_SCREEN_REFRESH);
+     this->preview->reload_print();
+     if (force_background_processing_restart)
+@@ -2201,6 +2213,61 @@ void Plater::priv::mirror(Axis axis)
+     view3D->mirror_selection(axis);
+ }
+ 
++void Plater::priv::set_camera_target_to_object_cog()
++{
++    const int obj_idx = get_selected_object_idx();
++    if (obj_idx < 0 || obj_idx >= int(model.objects.size()))
++        return;
++
++    const int inst_idx = std::max(0, get_selected_instance_idx());
++    const ModelObject* obj = model.objects[obj_idx];
++    if (!obj)
++        return;
++
++    const Vec3d cog = CameraUtils::calculate_object_cog(*obj, inst_idx);
++
++    get_camera().set_target(cog);
++
++    if (view3D && view3D->get_canvas3d()) {
++        view3D->get_canvas3d()->set_center_of_gravity_marker(cog, obj_idx, inst_idx);
++        view3D->get_canvas3d()->render();
++    }
++
++    if (notification_manager) {
++        notification_manager->push_notification(
++            NotificationType::CustomNotification,
++            NotificationManager::PreferencesNotificationLevel,
++            _u8L("Origine de la cam\xC3\xA9ra d\xC3\xA9finie au centre de l'objet actif."));
++    }
++}
++
++void Plater::priv::set_camera_target_to_bed_center()
++{
++    Vec3d bed_center = Vec3d::Zero();
++    if (view3D && view3D->get_canvas3d()) {
++        BoundingBoxf3 bed_bbox = bed.bounding_box_without_extensions();
++        const Vec2d bed_trans = multiple_beds.get_bed_translation(multiple_beds.get_active_bed());
++        if (bed_bbox.defined) {
++            bed_center = Vec3d(
++                0.5 * (bed_bbox.min.x() + bed_bbox.max.x()) + bed_trans.x(),
++                0.5 * (bed_bbox.min.y() + bed_bbox.max.y()) + bed_trans.y(),
++                0.0);
++        }
++        get_camera().set_target(bed_center);
++        view3D->get_canvas3d()->clear_center_of_gravity_marker();
++        view3D->get_canvas3d()->render();
++    } else {
++        get_camera().set_target(bed_center);
++    }
++
++    if (notification_manager) {
++        notification_manager->push_notification(
++            NotificationType::CustomNotification,
++            NotificationManager::PreferencesNotificationLevel,
++            _u8L("Origine de la cam\xC3\xA9ra d\xC3\xA9finie au centre du plateau."));
++    }
++}
++
+ void Plater::priv::split_object()
+ {
+     int obj_idx = get_selected_object_idx();
+@@ -7550,6 +7617,8 @@ void Plater::suppress_background_process(const bool stop_background_process)
+ void Plater::mirror(Axis axis)      { p->mirror(axis); }
+ void Plater::split_object()         { p->split_object(); }
+ void Plater::split_volume()         { p->split_volume(); }
++void Plater::set_camera_target_to_object_cog() { p->set_camera_target_to_object_cog(); }
++void Plater::set_camera_target_to_bed_center() { p->set_camera_target_to_bed_center(); }
+ void Plater::update_menus()         { p->menus.update(); }
+ void Plater::show_action_buttons(const bool ready_to_slice) const   { p->show_action_buttons(ready_to_slice); }
+ void Plater::show_action_buttons() const                            { p->show_action_buttons(p->ready_to_slice); }
+diff --git a/src/slic3r/GUI/Plater.hpp b/src/slic3r/GUI/Plater.hpp
+index 0b78b76..8db9b0b 100644
+--- a/src/slic3r/GUI/Plater.hpp
++++ b/src/slic3r/GUI/Plater.hpp
+@@ -328,6 +328,8 @@ public:
+     void mirror(Axis axis);
+     void split_object();
+     void split_volume();
++    void set_camera_target_to_object_cog();
++    void set_camera_target_to_bed_center();
+ 
+     bool can_delete() const;
+     bool can_delete_all() const;
+diff --git a/version.inc b/version.inc
+index e395190..5dcfd1e 100644
+--- a/version.inc
++++ b/version.inc
+@@ -1,9 +1,9 @@
+ # Included by CMakeLists, edited by the build script
+ # (the version numbers are generated by the build script from the git current label)
+ 
+-set(SLIC3R_APP_NAME "PrusaSlicer")
+-set(SLIC3R_APP_KEY "PrusaSlicer")
+-set(SLIC3R_VERSION "2.9.7")
+-set(SLIC3R_BUILD_ID "PrusaSlicer-${SLIC3R_VERSION}+UNKNOWN")
+-set(SLIC3R_RC_VERSION "2,9,7,0")
+-set(SLIC3R_RC_VERSION_DOTS "2.9.7.0")
++set(SLIC3R_APP_NAME "OpenSlicer 0.2 - basé sur PrusaSlicer 2.9.7")
++set(SLIC3R_APP_KEY "OpenSlicer")
++set(SLIC3R_VERSION "0.2.0")
++set(SLIC3R_BUILD_ID "OpenSlicer-0.2.0-PrusaSlicer-2.9.7")
++set(SLIC3R_RC_VERSION "0,2,0,0")
++set(SLIC3R_RC_VERSION_DOTS "0.2.0.0")

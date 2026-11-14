@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Resources of OpenPS.exe. Paths are relative to this file (rc.exe is run from this folder).
+1 VERSIONINFO
+FILEVERSION 0,2,0,0
+PRODUCTVERSION 0,2,0,0
+{
+ BLOCK "StringFileInfo"
+ {
+  BLOCK "040904E4"
+  {
+   VALUE "CompanyName", "OpenSlicer contributors"
+   VALUE "FileDescription", "OpenSlicer 0.2 - based on PrusaSlicer 2.9.7"
+   VALUE "FileVersion", "0.2.0"
+   VALUE "ProductName", "OpenSlicer"
+   VALUE "ProductVersion", "0.2.0"
+   VALUE "InternalName", "OpenPS"
+   VALUE "LegalCopyright", "OpenSlicer contributors, based on PrusaSlicer (C) 2016-2026 Prusa Research. GNU AGPLv3."
+   VALUE "OriginalFilename", "OpenPS.exe"
+  }
+ }
+ BLOCK "VarFileInfo"
+ {
+   VALUE "Translation", 0x409, 1252
+ }
+}
+// Icon 1 is the file icon used by Explorer, icon 2 is loaded by the launcher for the main window
+1 ICON "..\\..\\resources\\icons\\OpenPS.ico"
+2 ICON "..\\..\\resources\\icons\\OpenPS.ico"
+1 24 "OpenPS.manifest"

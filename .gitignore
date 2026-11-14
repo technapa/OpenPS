@@ -21,3 +21,8 @@ deps/build-linux/*
 **/.idea/
 .pkg_cache
 CMakeUserPresets.json
+
+# OpenSlicer
+/docs/antigravity/
+/scripts/__pycache__/
+*.new
