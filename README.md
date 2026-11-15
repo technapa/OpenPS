@@ -1,7 +1,9 @@
 # OpenSlicer
 
+**English** · [Français](README.fr.md)
+
 **OpenSlicer** is a Windows build of [PrusaSlicer](https://github.com/prusa3d/PrusaSlicer) 2.9.7 with a few extra tools,
-made first for the **Prusa CORE One INDX** (multi-tool) owners:
+made first for owners of the **Prusa CORE One INDX** (multi-tool):
 
 - **Sync tab**: a real two-way synchronization of filaments between the printer (through Prusa Connect) and the slicer.
 - **3D ViewCube** over the plater, to change the view in one click.
@@ -9,10 +11,29 @@ made first for the **Prusa CORE One INDX** (multi-tool) owners:
 
 Everything else is PrusaSlicer, unchanged: same slicing engine, same profiles, same project files.
 
+> [!IMPORTANT]
+> **This project was vibe coded.** It was written by AI coding agents, directed and tested by one maker on one
+> printer. Read [How this was made](#how-this-was-made-vibe-coding) before using it or contributing.
+
 > OpenSlicer is a community project. It is not affiliated with or endorsed by Prusa Research.
 > Prusa, PrusaSlicer and Prusa Connect are trademarks of Prusa Research a.s.
 
 ![Sync tab](doc/openslicer/images/sync-tab.png)
+
+---
+
+## Project status
+
+| | |
+|---|---|
+| Version | 0.2, experimental |
+| Platform | Windows 10/11 x64 only |
+| Base | Official PrusaSlicer 2.9.7 for Windows (not rebuilt) |
+| Tested on | One Prusa CORE One INDX (8 tools) with firmware 8, Prusa Connect, Windows 11 |
+| Releases | None yet: build it from source (a few seconds, see [Building](#building)) |
+
+It has been used by its author since November 2026 and has been stable so far, but it has had no review by
+anyone else yet. Bug reports are very welcome.
 
 ---
 
@@ -55,14 +76,29 @@ The tab works in the 21 languages of PrusaSlicer and follows the language chosen
 
 ---
 
+## Your account and your printer
+
+OpenSlicer touches your Prusa account and your printer only through Prusa Connect, and only when you ask:
+
+- **Login**: OpenSlicer reuses the session of PrusaSlicer (Windows Credential Manager). It only **reads** the access
+  token, never writes or refreshes it, and never sees your password.
+- **Reading**: the printer list and the tools are read when you open the Sync tab or click *Refresh*. There is no
+  background polling and no access to the local network.
+- **Writing**: only *Assign / Change*, *Send to &lt;printer&gt;* (material assignments, custom materials in your
+  warehouse) and *Unload* (only when the printer is idle). All of them can also be done or undone from Prusa Connect.
+- **Undocumented API**: Prusa Connect has no public API for this. OpenSlicer uses the internal calls of the Connect
+  web application; if Prusa changes them, the Sync tab may stop working (your account and printer are not affected).
+
+---
+
 ## Installing
 
 OpenSlicer needs **PrusaSlicer 2.9.7 for Windows x64** installed (it reuses its `PrusaSlicer.dll` and resources).
 
 1. Install [PrusaSlicer 2.9.7](https://github.com/prusa3d/PrusaSlicer/releases/tag/version_2.9.7).
-2. Build OpenSlicer (below) with `-Publish`, or copy a release folder.
+2. Build OpenSlicer (below) with `-Publish`.
 3. Start `OpenPS.exe`. Settings, profiles and the Prusa Account login are shared with PrusaSlicer
-   (`%APPDATA%\PrusaSlicer`).
+   (`%APPDATA%\PrusaSlicer`). PrusaSlicer itself keeps working and can stay open.
 4. For the Sync tab, log in to your Prusa Account in the **Prusa Connect** tab once.
 
 If `PrusaSlicer.dll` is not the 2.9.7 Windows x64 release, OpenSlicer still starts, tells you once, and disables the
@@ -103,6 +139,45 @@ OpenSlicer features; for the ViewCube and Set origin it calls PrusaSlicer functi
 | `doc/openslicer/` | Developer documentation |
 | everything else | PrusaSlicer 2.9.7 sources, untouched ([original README](doc/PrusaSlicer-README.md)) |
 
+The git history keeps the full PrusaSlicer history up to the `version_2.9.7` tag; OpenSlicer is the commits on top.
+
+---
+
+## How this was made (vibe coding)
+
+OpenSlicer was **vibe coded**: its author ([Tech Napa](https://github.com/technapa), a maker and 3D printing
+YouTuber, not a professional C++ developer) described the features, tested each build on a real printer and
+reported what was wrong; AI coding agents wrote the code.
+
+- **Prototype**: [Google Antigravity](https://antigravity.google/) (Gemini). It produced the first launcher, the
+  first Sync tab and the ViewCube. The Sync worked from printer to slicer, but the other direction uploaded a G-code
+  file that the printer ran as a print job and that rewrote its per-tool filament settings.
+- **Rewrite and clean-up**: [Claude Code](https://claude.com/claude-code) (Claude Opus). It rewrote the Sync tab and
+  its Prusa Connect client from scratch (Connect styling, assignments through the same GraphQL calls as the Connect
+  web app, no G-code at all, read-only use of the session), translated every added text into the 21 languages,
+  added the DLL build check, the build scripts and this documentation. Commits made this way carry a
+  `Co-Authored-By: Claude` line.
+- **PrusaSlicer internals**: the function addresses and object layouts in
+  [`PrusaSlicerDll.hpp`](src/openps_launcher/PrusaSlicerDll.hpp) were found by the agents by comparing the PrusaSlicer
+  2.9.7 sources with the disassembly of the official DLL.
+- **Prusa Connect calls**: copied from the requests of the Connect web application, not from a documentation.
+
+What this means for you:
+
+- The code has been **read by its author, tested on real hardware, and built without warnings (`/W4`)**, but it has
+  **not been reviewed by an experienced C++ or Windows developer**. Treat it as you would any young hobby project.
+- **Verified**: Sync tab reading and *Send to printer* / *Send to OpenSlicer* on a CORE One INDX with 8 tools; UI in
+  English, French, German and Japanese; the DLL check; ViewCube and Set origin at 150 % display scaling.
+- **Not verified yet**: *Unload* from the Sync tab, changing the language while OpenSlicer runs, other printers
+  (single-tool printers should work but were not tried), Windows 10.
+- The translations other than English and French were written by the AI without a native speaker; corrections are
+  welcome ([TRANSLATIONS.md](doc/openslicer/TRANSLATIONS.md)).
+
+Human reviews, tests and pull requests, AI-assisted or not, are welcome. If you use an AI agent, please say so in
+your pull request.
+
+---
+
 ## Contributing
 
 Issues and pull requests are welcome. Useful entry points:
@@ -112,7 +187,7 @@ Issues and pull requests are welcome. Useful entry points:
 - [Porting to another PrusaSlicer version](doc/openslicer/UPDATING_PRUSASLICER.md).
 
 Please keep the code in English (comments and identifiers), build without warnings (`/W4`), and add new user-visible
-text to `SyncIndxI18n.hpp` in every language.
+text to `SyncIndxI18n.hpp` in every language. Never commit tokens, keys or anything from your Prusa account.
 
 ### Known limitations
 
@@ -120,6 +195,7 @@ text to `SyncIndxI18n.hpp` in every language.
 - Outside French, some PrusaSlicer texts still name "PrusaSlicer" (only the French catalog is rebranded).
 - The slicer colors are read from the filament combo boxes of the plater; open the Sync tab from the plater after
   changing a color so that it is read again.
+- The Sync tab depends on undocumented Prusa Connect calls (see above).
 
 ## License
 
