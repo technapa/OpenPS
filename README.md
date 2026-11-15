@@ -12,7 +12,7 @@ made first for owners of the **Prusa CORE One INDX** (multi-tool):
 Everything else is PrusaSlicer, unchanged: same slicing engine, same profiles, same project files.
 
 > [!IMPORTANT]
-> **This project was vibe coded.** It was written by AI coding agents, directed and tested by one maker on one
+> **This project was vibe coded.** It was co-written by AI coding agents, directed and tested by one maker on one
 > printer. Read [How this was made](#how-this-was-made-vibe-coding) before using it or contributing.
 
 > OpenSlicer is a community project. It is not affiliated with or endorsed by Prusa Research.
