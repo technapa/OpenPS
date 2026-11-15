@@ -13,7 +13,7 @@ outils en plus, pensée d'abord pour les possesseurs de la **Prusa CORE One INDX
 Tout le reste est PrusaSlicer, sans modification : même moteur de découpe, mêmes profils, mêmes fichiers projet.
 
 > [!IMPORTANT]
-> **Ce projet a été codé en « vibe coding ».** Le code a été écrit par des agents IA, sous la direction d'un maker
+> **Ce projet a été codé en « vibe coding ».** Le code a été co-écrit par des agents IA, sous la direction d'un maker
 > qui l'a testé sur sa propre imprimante. Lisez [Comment il a été fait](#comment-il-a-été-fait-vibe-coding) avant de
 > l'utiliser ou d'y contribuer.
 
@@ -32,7 +32,7 @@ Tout le reste est PrusaSlicer, sans modification : même moteur de découpe, mê
 | Plateforme | Windows 10/11 x64 uniquement |
 | Base | PrusaSlicer 2.9.7 officiel pour Windows (non recompilé) |
 | Testé sur | Une Prusa CORE One INDX (8 outils), firmware 8, Prusa Connect, Windows 11 |
-| Versions publiées | Aucune pour l'instant : compilez-le depuis les sources (quelques secondes, voir [Compilation](#compilation)) |
+| Téléchargement | Zip portable dans [Releases](https://github.com/technapa/OpenPS/releases) (voir [Installation](#installation)) |
 
 Son auteur l'utilise depuis novembre 2026 et il est stable jusqu'ici, mais personne d'autre ne l'a encore relu ni
 testé. Les rapports de bugs sont les bienvenus.
@@ -100,14 +100,21 @@ demandez :
 
 ## Installation
 
-OpenSlicer a besoin de **PrusaSlicer 2.9.7 pour Windows x64** installé (il réutilise son `PrusaSlicer.dll` et ses
-ressources).
+**Zip portable (le plus simple)**
 
-1. Installez [PrusaSlicer 2.9.7](https://github.com/prusa3d/PrusaSlicer/releases/tag/version_2.9.7).
-2. Compilez OpenSlicer (ci-dessous) avec `-Publish`.
-3. Lancez `OpenPS.exe`. Réglages, profils et connexion au compte Prusa sont partagés avec PrusaSlicer
-   (`%APPDATA%\PrusaSlicer`). PrusaSlicer continue de fonctionner et peut rester ouvert.
+1. Téléchargez `OpenSlicer-0.2-win64.zip` depuis la [dernière version publiée](https://github.com/technapa/OpenPS/releases/latest).
+2. Décompressez-le où vous voulez (par exemple `C:\App\`) et lancez `OpenSlicer\OpenPS.exe`. Aucune installation,
+   pas besoin de PrusaSlicer : le zip contient le moteur officiel de PrusaSlicer 2.9.7. Windows SmartScreen peut
+   avertir d'un éditeur inconnu (le programme n'est pas signé) : *Informations complémentaires > Exécuter quand même*.
+3. Réglages, profils et connexion au compte Prusa sont partagés avec PrusaSlicer (`%APPDATA%\PrusaSlicer`).
+   Un PrusaSlicer installé continue de fonctionner et peut rester ouvert.
 4. Pour l'onglet Sync, connectez-vous une fois à votre compte Prusa dans l'onglet **Prusa Connect**.
+
+**Depuis les sources**
+
+1. Installez [PrusaSlicer 2.9.7](https://github.com/prusa3d/PrusaSlicer/releases/tag/version_2.9.7)
+   (OpenSlicer réutilise son `PrusaSlicer.dll` et ses ressources).
+2. Compilez OpenSlicer (ci-dessous) avec `-Publish`, puis lancez `OpenPS.exe` depuis le dossier d'installation.
 
 Si `PrusaSlicer.dll` n'est pas la version 2.9.7 Windows x64, OpenSlicer démarre quand même, vous prévient une fois et
 désactive les fonctions qui dépendent des rouages internes de PrusaSlicer (ViewCube, Définir l'origine, choix
@@ -125,6 +132,8 @@ powershell -ExecutionPolicy Bypass -File scripts\build_launcher.ps1
 # compilation et installation dans C:\App\OpenPS (ferme un OpenSlicer lancé depuis ce dossier, jamais de force)
 powershell -ExecutionPolicy Bypass -File scripts\build_launcher.ps1 -Publish -InstallDir C:\App\OpenPS
 ```
+
+Pour fabriquer le zip portable : `powershell -ExecutionPolicy Bypass -File scripts\package_release.ps1 -Version 0.2`.
 
 Le lanceur est une seule unité de compilation C++17 et se compile en quelques secondes. PrusaSlicer lui-même n'est
 **pas** recompilé : aucune de ses dépendances (`deps/`) n'est nécessaire.
